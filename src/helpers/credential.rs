@@ -322,8 +322,9 @@ impl<'a> Credential<'a> {
             issuer: credential.issuer.clone(),
             revocation_list: revocation_list.clone(),
             revocation_id: credential_status.revocation_list_index.to_owned(),
-            issuer_public_key_did: credential.issuer.clone(),
-            issuer_proving_key: proving_key.to_owned(),
+            revocation_list_proof_keys: None,
+            // issuer: credential.issuer.clone(),
+            // issuer_proving_key: proving_key.to_owned(),
         };
 
         let payload = serde_json::to_string(&payload)?;

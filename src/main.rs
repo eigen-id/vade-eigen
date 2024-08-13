@@ -16,9 +16,27 @@
 
 extern crate clap;
 
+use alloy_network::{Ethereum, EthereumSigner};
+use alloy_provider::RootProvider;
+use alloy_provider::{Provider, ProviderBuilder};
+use alloy_rpc_types::{BlockNumberOrTag, Filter};
+use alloy_sol_types::{sol, SolEvent};
+use alloy_transport_http::Client;
+use chrono::Utc;
+use reqwest::Url;
+// use SimpleSidetreeManager::Anchor;
+use alloy_primitives::{eip191_hash_message, Address, FixedBytes, U256};
+use alloy_signer::Signer;
+use alloy_signer_wallet::LocalWallet;
+
+use alloy_provider::fillers::{
+    ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, SignerFiller,
+};
+use vade_sidetree::datatypes::{DidCreateResponse, DidDocument};
+use std::{env, str::FromStr};
 use anyhow::{bail, Result};
 use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
-
+use once_cell::sync::Lazy;
 use vade_evan::{VadeEvan, VadeEvanConfig, DEFAULT_SIGNER, DEFAULT_TARGET};
 
 // macro might be unused depending on feature combination
@@ -49,6 +67,23 @@ macro_rules! wrap_vade3 {
 #[cfg(any(feature = "didcomm", feature = "vc-zkp-bbs"))]
 const EVAN_METHOD: &str = "did:evan";
 
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    SimpleSidetreeManager,
+    "json_abi/SimpleSidetreeAnchorAVS.json"
+);
+
+static KEY: Lazy<String> =
+    Lazy::new(|| env::var("PRIVATE_KEY").expect("failed to retrieve private key"));
+
+pub static RPC_URL: Lazy<String> =
+    Lazy::new(|| env::var("RPC_URL").expect("failed to get rpc url from env"));
+
+pub static HELLO_WORLD_CONTRACT_ADDRESS: Lazy<String> = Lazy::new(|| {
+    env::var("CONTRACT_ADDRESS").expect("failed to get hello world contract address from env")
+});
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let matches = get_argument_matches()?;
@@ -61,9 +96,12 @@ async fn main() -> Result<()> {
                 let method = get_argument_value(&sub_m, "method", None);
                 let options = get_argument_value(&sub_m, "options", None);
                 let payload = get_argument_value(&sub_m, "payload", None);
-                get_vade_evan(&sub_m)?
+                let did_doc_str = get_vade_evan(&sub_m)?
                     .did_create(&method, &options, &payload)
-                    .await?
+                    .await?;
+                let did_doc: DidCreateResponse = serde_json::from_str(&did_doc_str)?;
+                notify_did_operation(FixedBytes::from_str(&did_doc.did.did_document.id)?).await?;
+                did_doc_str
             }
             #[cfg(feature = "did-read")]
             ("resolve", Some(sub_m)) => {
@@ -1061,4 +1099,54 @@ fn get_clap_argument(arg_name: &str) -> Result<Arg> {
             bail!("invalid arg_name: '{}'", &arg_name);
         },
     })
+}
+
+async fn notify_did_operation(
+    did_suffix: FixedBytes<32>,
+) -> Result<()> {
+    let provider = get_provider_with_wallet(KEY.clone());
+
+    // let wallet = LocalWallet::from_str(&KEY.clone()).expect("failed to generate wallet ");
+
+    let hello_world_contract_address = Address::from_str(&HELLO_WORLD_CONTRACT_ADDRESS)
+        .expect("wrong hello world contract address");
+    let hello_world_contract =
+        SimpleSidetreeManager::new(hello_world_contract_address, &provider);
+
+    hello_world_contract
+        .newDIDOperation(
+          did_suffix,
+        )
+        .gas_price(20000000000)
+        .gas(300000)
+        .send()
+        .await?
+        .get_receipt()
+        .await?;
+    println!("DID Operation notified to operator");
+    Ok(())
+}
+
+pub fn get_provider_with_wallet(
+    key: String,
+) -> FillProvider<
+    JoinFill<
+        JoinFill<
+            JoinFill<JoinFill<alloy_provider::Identity, GasFiller>, NonceFiller>,
+            ChainIdFiller,
+        >,
+        SignerFiller<EthereumSigner>,
+    >,
+    RootProvider<alloy_transport_http::Http<Client>>,
+    alloy_transport_http::Http<Client>,
+    Ethereum,
+> {
+    let wallet = LocalWallet::from_str(&key.to_string()).expect("failed to generate wallet ");
+    let url = Url::parse(&RPC_URL.clone()).expect("Wrong rpc url");
+    let provider = ProviderBuilder::new()
+        .with_recommended_fillers()
+        .signer(EthereumSigner::from(wallet.clone()))
+        .on_http(url);
+
+    return provider;
 }
