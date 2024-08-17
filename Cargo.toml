@@ -213,7 +213,7 @@ wasm-bindgen-futures = "0.4.5"
 [dev-dependencies]
 anyhow = "1.0.68"
 serial_test = "0.5.1"
-tokio = { version = "=1.37.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "=1.39.2", features = ["macros", "rt-multi-thread"] }
 
 ################################################################### target specific dev dependencies
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
