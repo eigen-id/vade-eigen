@@ -155,7 +155,7 @@ optional = true
 
 # vc-zkp-bbs
 [dependencies.base64]
-version = "0.13.0"
+version = "0.22.1"
 optional = true
 
 [dependencies.bbs]
