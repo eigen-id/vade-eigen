@@ -17,27 +17,26 @@
 extern crate clap;
 
 use alloy_network::{Ethereum, EthereumSigner};
+use alloy_provider::ProviderBuilder;
 use alloy_provider::RootProvider;
-use alloy_provider::{Provider, ProviderBuilder};
-use alloy_rpc_types::{BlockNumberOrTag, Filter};
-use alloy_sol_types::{sol, SolEvent};
+use alloy_sol_types::sol;
 use alloy_transport_http::Client;
-use chrono::Utc;
+use base64::URL_SAFE_NO_PAD;
 use reqwest::Url;
 // use SimpleSidetreeManager::Anchor;
-use alloy_primitives::{eip191_hash_message, Address, FixedBytes, U256};
-use alloy_signer::Signer;
-use alloy_signer_wallet::LocalWallet;
-
+use alloy_primitives::{Address, FixedBytes};
 use alloy_provider::fillers::{
     ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, SignerFiller,
 };
-use vade_sidetree::datatypes::{DidCreateResponse, DidDocument};
-use std::{env, str::FromStr};
-use anyhow::{bail, Result};
+use alloy_signer_wallet::LocalWallet;
+use anyhow::{anyhow, bail, Result};
 use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
+use dotenv::dotenv;
 use once_cell::sync::Lazy;
+use std::convert::TryFrom;
+use std::{env, str::FromStr};
 use vade_evan::{VadeEvan, VadeEvanConfig, DEFAULT_SIGNER, DEFAULT_TARGET};
+use vade_sidetree::datatypes::DidCreateResponse;
 
 // macro might be unused depending on feature combination
 #[allow(unused_macros)]
@@ -86,6 +85,7 @@ pub static HELLO_WORLD_CONTRACT_ADDRESS: Lazy<String> = Lazy::new(|| {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    dotenv().ok();
     let matches = get_argument_matches()?;
 
     let result = match matches.subcommand() {
@@ -100,7 +100,17 @@ async fn main() -> Result<()> {
                     .did_create(&method, &options, &payload)
                     .await?;
                 let did_doc: DidCreateResponse = serde_json::from_str(&did_doc_str)?;
-                notify_did_operation(FixedBytes::from_str(&did_doc.did.did_document.id)?).await?;
+                let did = did_doc
+                    .did
+                    .did_document
+                    .id
+                    .split(":")
+                    .collect::<Vec<&str>>()
+                    .get(3)
+                    .ok_or(anyhow!("Invalid did string"))?
+                    .to_string();
+                let bytes = base64::decode_config(&did, URL_SAFE_NO_PAD)?;
+                notify_did_operation(FixedBytes::try_from(&bytes[2..])?).await?;
                 did_doc_str
             }
             #[cfg(feature = "did-read")]
@@ -1101,22 +1111,15 @@ fn get_clap_argument(arg_name: &str) -> Result<Arg> {
     })
 }
 
-async fn notify_did_operation(
-    did_suffix: FixedBytes<32>,
-) -> Result<()> {
+async fn notify_did_operation(did_suffix: FixedBytes<32>) -> Result<()> {
     let provider = get_provider_with_wallet(KEY.clone());
-
-    // let wallet = LocalWallet::from_str(&KEY.clone()).expect("failed to generate wallet ");
 
     let hello_world_contract_address = Address::from_str(&HELLO_WORLD_CONTRACT_ADDRESS)
         .expect("wrong hello world contract address");
-    let hello_world_contract =
-        SimpleSidetreeManager::new(hello_world_contract_address, &provider);
+    let hello_world_contract = SimpleSidetreeManager::new(hello_world_contract_address, &provider);
 
     hello_world_contract
-        .newDIDOperation(
-          did_suffix,
-        )
+        .newDIDOperation(did_suffix)
         .gas_price(20000000000)
         .gas(300000)
         .send()

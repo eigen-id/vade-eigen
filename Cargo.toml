@@ -98,6 +98,7 @@ alloy-transport =  {git = "https://github.com/alloy-rs/alloy", rev = "cc68b93"}
 alloy-transport-ws = {git = "https://github.com/alloy-rs/alloy", rev = "cc68b93"}
 alloy-rpc-client = {git = "https://github.com/alloy-rs/alloy", rev = "cc68b93"}
 
+dotenv = "0.15.0"
 async-trait = "0.1.31"
 cfg-if = "0.1"
 jni = "0.19.0"
@@ -108,6 +109,7 @@ thiserror = "1.0.38"
 vade = "0.1.1"
 chrono = "0.4.23"
 reqwest = "0.12.4"
+hex = "0.4.3"
 
 ###################################################################### feature specific dependencies
 # did-sidetree
